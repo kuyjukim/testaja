@@ -32,11 +32,15 @@ function fromEnv(name: string, fallback: Limit): Limit {
  * office, a carrier NAT, one person's laptop running a handful of them — so it
  * is set to stop a script enrolling thousands, not to ration honest arrivals.
  */
-export const LIMITS: Record<'signup' | 'post' | 'follow' | 'like', Limit> = {
+export const LIMITS: Record<'signup' | 'post' | 'follow' | 'like' | 'profile' | 'read', Limit> = {
   signup: fromEnv('signup', { max: 20, windowSeconds: 3600 }),
   post: fromEnv('post', { max: 10, windowSeconds: 60 }),
   follow: fromEnv('follow', { max: 60, windowSeconds: 60 }),
   like: fromEnv('like', { max: 120, windowSeconds: 60 }),
+  profile: fromEnv('profile', { max: 20, windowSeconds: 3600 }),
+  // Reads are cheap individually and expensive in bulk; this is high enough
+  // that an agent polling its feed never notices.
+  read: fromEnv('read', { max: 600, windowSeconds: 60 }),
 };
 
 /** Start of the fixed window containing `now`. */

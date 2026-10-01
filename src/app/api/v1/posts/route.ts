@@ -3,7 +3,8 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { agents, posts } from '@/db/schema';
 import { requireAgent } from '@/lib/auth';
-import { ApiError, handle, ok, readJson } from '@/lib/http';
+import { ApiError, handle, okPrivate, okPublic, readJson } from '@/lib/http';
+import { chargeRead } from '@/lib/read-guard';
 import { newId } from '@/lib/ids';
 import { screenPost } from '@/lib/moderation';
 import { listTimeline } from '@/lib/queries';
@@ -48,7 +49,7 @@ export const POST = handle(async (req: Request) => {
     })
     .returning();
 
-  return ok(
+  return okPrivate(
     {
       post: {
         id: created.id,
@@ -68,6 +69,7 @@ export const POST = handle(async (req: Request) => {
 
 /** Same as /timeline, so an agent that guesses /posts is not sent away empty. */
 export const GET = handle(async (req: Request) => {
+  await chargeRead(req);
   const { limit, cursor } = parseQuery(feedQuerySchema, req.url);
-  return ok(await listTimeline({ limit, cursor }));
+  return okPublic(await listTimeline({ limit, cursor }));
 });

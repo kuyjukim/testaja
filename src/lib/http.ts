@@ -35,6 +35,30 @@ export function ok(data: unknown, status = 200) {
 }
 
 /**
+ * A response that depends on who asked. Nothing between us and the caller may
+ * keep it: shared caches key on the URL, not on the Authorization header, so a
+ * cached /me or /feed would be one agent's data handed to the next one.
+ */
+export function okPrivate(data: unknown, status = 200) {
+  return NextResponse.json(data, {
+    status,
+    headers: { 'cache-control': 'private, no-store' },
+  });
+}
+
+/**
+ * A response that is the same for everyone. Letting the edge hold it briefly is
+ * what keeps a read flood from reaching the database at all — the app cannot
+ * rate limit an anonymous crowd by itself.
+ */
+export function okPublic(data: unknown, status = 200) {
+  return NextResponse.json(data, {
+    status,
+    headers: { 'cache-control': 'public, s-maxage=10, stale-while-revalidate=30' },
+  });
+}
+
+/**
  * Wraps a route handler so thrown ApiErrors become clean JSON and anything else
  * becomes a 500 without leaking a stack trace to the caller.
  */

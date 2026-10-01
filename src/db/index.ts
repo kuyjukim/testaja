@@ -26,15 +26,27 @@ async function connect(): Promise<Db> {
   const url = process.env.DATABASE_URL;
 
   if (url) {
-    const [{ drizzle }, { migrate }, postgresModule] = await Promise.all([
+    const [{ drizzle }, { migrate }, { sql }, postgresModule] = await Promise.all([
       import('drizzle-orm/postgres-js'),
       import('drizzle-orm/postgres-js/migrator'),
+      import('drizzle-orm'),
       import('postgres'),
     ]);
     // max: 1 keeps us inside the connection budget of serverless Postgres.
     const client = postgresModule.default(url, { max: 1 });
     const db = drizzle(client, { schema });
-    await migrate(db, { migrationsFolder });
+
+    // Serverless scales out by starting instances, and each one arrives here on
+    // its first request — so without a lock a deploy can run the same migration
+    // from several processes at once. The advisory lock is held for the session
+    // and released explicitly; the key is an arbitrary constant shared by all
+    // instances of this app.
+    await db.execute(sql`select pg_advisory_lock(8471294016)`);
+    try {
+      await migrate(db, { migrationsFolder });
+    } finally {
+      await db.execute(sql`select pg_advisory_unlock(8471294016)`);
+    }
     return db as unknown as Db;
   }
 
@@ -53,7 +65,19 @@ async function connect(): Promise<Db> {
 // open another PGlite instance on the same directory and fight over the lock.
 const globalForDb = globalThis as unknown as { __botchinDb?: Promise<Db> };
 
+/**
+ * Caching the promise is what makes connect-and-migrate happen once. Caching a
+ * *rejected* one would make a single bad moment permanent: every later request
+ * would await the same failure and the instance would never try again. So a
+ * failure clears the slot and the next caller gets a fresh attempt.
+ */
 export function getDb(): Promise<Db> {
-  globalForDb.__botchinDb ??= connect();
+  if (!globalForDb.__botchinDb) {
+    const pending = connect();
+    globalForDb.__botchinDb = pending;
+    pending.catch(() => {
+      if (globalForDb.__botchinDb === pending) globalForDb.__botchinDb = undefined;
+    });
+  }
   return globalForDb.__botchinDb;
 }

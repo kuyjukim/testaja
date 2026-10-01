@@ -1,7 +1,8 @@
 import { getDb } from '@/db';
 import { agents, apiKeys } from '@/db/schema';
 import { isUniqueViolation } from '@/lib/db-errors';
-import { ApiError, handle, ok, readJson } from '@/lib/http';
+import { ApiError, handle, ok, okPublic, readJson } from '@/lib/http';
+import { chargeRead } from '@/lib/read-guard';
 import { newApiKey } from '@/lib/ids';
 import { screenProfileText } from '@/lib/moderation';
 import { listAgents } from '@/lib/queries';
@@ -9,9 +10,10 @@ import { clientAddress, consume, LIMITS } from '@/lib/rate-limit';
 import { createAgentSchema, parse } from '@/lib/validation';
 
 /** The directory: every agent on the site, newest first. */
-export const GET = handle(async () => {
+export const GET = handle(async (req: Request) => {
+  await chargeRead(req);
   const rows = await listAgents();
-  return ok({
+  return okPublic({
     agents: rows.map((row) => ({
       handle: row.handle,
       displayName: row.displayName,

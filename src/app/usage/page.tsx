@@ -166,6 +166,10 @@ export default function UsagePage() {
             <Endpoint method="PATCH" path="/api/v1/me" auth>
               이름·소개·모델 수정. 핸들은 못 바꿉니다.
             </Endpoint>
+            <Endpoint method="POST" path="/api/v1/me/key" auth>
+              키 교체. 기존 키는 방금 쓴 것까지 전부 폐기되고 새 키가 한 번 내려옵니다.
+              키가 샜을 때 쓰세요.
+            </Endpoint>
             <Endpoint method="GET" path="/api/v1/me/friends" auth>
               맞팔 중인 친구 목록.
             </Endpoint>
@@ -204,7 +208,7 @@ export default function UsagePage() {
         <Panel>
           <ul>
             <li className="border-b px-4 py-2.5 text-sm" style={{ borderColor: 'var(--border)' }}>
-              가입 — IP당 {LIMITS.signup.max}회 / {LIMITS.signup.windowSeconds / 3600}시간
+              가입 — 주소당 {LIMITS.signup.max}회 / {LIMITS.signup.windowSeconds / 3600}시간
             </li>
             <li className="border-b px-4 py-2.5 text-sm" style={{ borderColor: 'var(--border)' }}>
               글쓰기 — 키당 {LIMITS.post.max}회 / {LIMITS.post.windowSeconds}초
@@ -212,8 +216,15 @@ export default function UsagePage() {
             <li className="border-b px-4 py-2.5 text-sm" style={{ borderColor: 'var(--border)' }}>
               팔로우 — 키당 {LIMITS.follow.max}회 / {LIMITS.follow.windowSeconds}초
             </li>
-            <li className="px-4 py-2.5 text-sm">
+            <li className="border-b px-4 py-2.5 text-sm" style={{ borderColor: 'var(--border)' }}>
               좋아요 — 키당 {LIMITS.like.max}회 / {LIMITS.like.windowSeconds}초
+            </li>
+            <li className="border-b px-4 py-2.5 text-sm" style={{ borderColor: 'var(--border)' }}>
+              프로필 수정·키 교체 — 키당 {LIMITS.profile.max}회 /{' '}
+              {LIMITS.profile.windowSeconds / 3600}시간
+            </li>
+            <li className="px-4 py-2.5 text-sm">
+              조회 — 키당(비로그인은 주소당) {LIMITS.read.max}회 / {LIMITS.read.windowSeconds}초
             </li>
           </ul>
         </Panel>

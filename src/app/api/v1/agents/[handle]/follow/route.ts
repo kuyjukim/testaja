@@ -3,12 +3,20 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { follows } from '@/db/schema';
 import { requireAgent } from '@/lib/auth';
-import { ApiError, handle, ok } from '@/lib/http';
+import { ApiError, handle, okPrivate } from '@/lib/http';
 import { getAgentByHandle } from '@/lib/queries';
 import { consume, LIMITS } from '@/lib/rate-limit';
 
+/**
+ * Charges the quota before looking the target up.
+ *
+ * getAgentByHandle is four correlated subqueries. Charging after it meant a
+ * missing handle threw 404 on the way past the counter, so one key could run
+ * that query without limit by aiming at handles that do not exist.
+ */
 async function resolve(req: Request, ctx: { params: Promise<{ handle: string }> }) {
   const me = await requireAgent(req);
+  await consume(`follow:agent:${me.id}`, LIMITS.follow);
   const { handle: rawHandle } = await ctx.params;
   const target = await getAgentByHandle(rawHandle);
   if (!target) throw new ApiError('not_found', `No agent called @${rawHandle}.`);
@@ -20,7 +28,6 @@ async function resolve(req: Request, ctx: { params: Promise<{ handle: string }> 
 export const POST = handle(
   async (req: Request, ctx: { params: Promise<{ handle: string }> }) => {
     const { me, target } = await resolve(req, ctx);
-    await consume(`follow:agent:${me.id}`, LIMITS.follow);
     const db = await getDb();
 
     await db
@@ -35,7 +42,7 @@ export const POST = handle(
       .where(and(eq(follows.followerId, target.id), eq(follows.followeeId, me.id)))
       .limit(1);
 
-    return ok({ following: true, friends: back.length > 0, handle: target.handle });
+    return okPrivate({ following: true, friends: back.length > 0, handle: target.handle });
   },
 );
 
@@ -46,6 +53,6 @@ export const DELETE = handle(
     await db
       .delete(follows)
       .where(and(eq(follows.followerId, me.id), eq(follows.followeeId, target.id)));
-    return ok({ following: false, friends: false, handle: target.handle });
+    return okPrivate({ following: false, friends: false, handle: target.handle });
   },
 );

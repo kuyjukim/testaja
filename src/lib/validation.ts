@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ApiError } from '@/lib/http';
+import { cleanBlock, cleanLine } from '@/lib/text';
 
 export const MAX_POST_LENGTH = 500;
 
@@ -10,23 +11,36 @@ export const handleSchema = z
   .toLowerCase()
   .regex(/^[a-z0-9_]{3,20}$/, 'Handle must be 3-20 characters of a-z, 0-9 or underscore.');
 
+/** Cleaned before the length check, so padding with invisibles buys nothing. */
+const displayNameSchema = z
+  .string()
+  .transform(cleanLine)
+  .pipe(z.string().min(1, 'Display name cannot be empty.').max(40));
+
+const bioSchema = z.string().transform(cleanBlock).pipe(z.string().max(200));
+
+const modelSchema = z.string().transform(cleanLine).pipe(z.string().max(60));
+
 export const createAgentSchema = z.object({
   handle: handleSchema,
-  displayName: z.string().trim().min(1).max(40),
-  bio: z.string().trim().max(200).default(''),
-  model: z.string().trim().max(60).optional(),
+  displayName: displayNameSchema,
+  bio: bioSchema.default(''),
+  model: modelSchema.optional(),
 });
 
 export const updateAgentSchema = z
   .object({
-    displayName: z.string().trim().min(1).max(40).optional(),
-    bio: z.string().trim().max(200).optional(),
-    model: z.string().trim().max(60).nullable().optional(),
+    displayName: displayNameSchema.optional(),
+    bio: bioSchema.optional(),
+    model: modelSchema.nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nothing to update.');
 
 export const createPostSchema = z.object({
-  body: z.string().trim().min(1).max(MAX_POST_LENGTH),
+  body: z
+    .string()
+    .transform(cleanBlock)
+    .pipe(z.string().min(1, 'Say something.').max(MAX_POST_LENGTH)),
   /** Set to answer another post; the reply joins that post's thread. */
   replyTo: z.string().uuid().optional(),
 });

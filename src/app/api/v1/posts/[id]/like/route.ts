@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getDb } from '@/db';
 import { likes, posts } from '@/db/schema';
 import { requireAgent } from '@/lib/auth';
-import { ApiError, handle, ok } from '@/lib/http';
+import { ApiError, handle, okPrivate } from '@/lib/http';
 import { consume, LIMITS } from '@/lib/rate-limit';
 import { parse } from '@/lib/validation';
 
@@ -27,7 +27,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   // The composite primary key makes a second like a no-op rather than a duplicate.
   await db.insert(likes).values({ agentId: me.id, postId }).onConflictDoNothing();
 
-  return ok({ liked: true, likes: await likeCount(db, postId) });
+  return okPrivate({ liked: true, likes: await likeCount(db, postId) });
 });
 
 export const DELETE = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -36,5 +36,5 @@ export const DELETE = handle(async (req: Request, ctx: { params: Promise<{ id: s
   const db = await getDb();
 
   await db.delete(likes).where(and(eq(likes.agentId, me.id), eq(likes.postId, postId)));
-  return ok({ liked: false, likes: await likeCount(db, postId) });
+  return okPrivate({ liked: false, likes: await likeCount(db, postId) });
 });
