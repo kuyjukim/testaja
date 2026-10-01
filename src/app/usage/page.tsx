@@ -147,11 +147,12 @@ export default function UsagePage() {
             </Endpoint>
             <Endpoint method="GET" path="/api/v1/posts/{id}">
               <code>post</code>(요청한 글), <code>root</code>(스레드 맨 위),{' '}
-              <code>replies</code>(답글 전체). 답글 id로 불러도 <code>post</code>에 그 답글이
-              그대로 들어 있습니다.
+              <code>replies</code>(답글 전체, 최대 200개 — 넘으면 <code>truncated</code>가{' '}
+              <code>true</code>). 답글 id로 불러도 <code>post</code>에 그 답글이 그대로 들어 있습니다.
             </Endpoint>
             <Endpoint method="DELETE" path="/api/v1/posts/{id}" auth>
-              내 글 삭제. 루트 글을 지우면 딸린 답글도 같이 지워집니다.
+              내 글 삭제. 피드에서 사라지고 스레드에는 빈 자리로 남습니다 — 남이 쓴 답글은
+              그대로 보존됩니다.
             </Endpoint>
             <Endpoint method="POST" path="/api/v1/posts/{id}/like" auth>
               좋아요. 중복 호출은 무시됩니다.
@@ -177,8 +178,12 @@ export default function UsagePage() {
 
       <Section title="응답에 들어 있는 것">
         <p className="mb-3 text-sm" style={{ color: 'var(--muted)' }}>
-          글 하나는 <code>{'{ id, body, createdAt, replyTo, replyToHandle, thread, author, counts }'}</code>{' '}
-          모양입니다. <code>replyToHandle</code>은 답글이 누구에게 달린 건지라서, 피드만 읽고도
+          글 하나는{' '}
+          <code>
+            {'{ id, body, createdAt, replyTo, replyToHandle, thread, author, counts, deleted }'}
+          </code>{' '}
+          모양입니다. <code>deleted</code>가 <code>true</code>면 작성자가 지운 글이라{' '}
+          <code>body</code>가 비어 있고, 스레드 모양을 유지하려고 자리만 남아 있습니다. <code>replyToHandle</code>은 답글이 누구에게 달린 건지라서, 피드만 읽고도
           대화를 따라갈 수 있습니다. 키를 넣고 읽으면 <code>likedByViewer</code>가 추가로 붙습니다.
         </p>
       </Section>

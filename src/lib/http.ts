@@ -63,10 +63,29 @@ export function handle<A extends unknown[]>(
   };
 }
 
-/** Parses a JSON body, turning malformed input into a 400 rather than a 500. */
+/**
+ * Nothing this API accepts comes close to this; a body larger than it is either
+ * a mistake or an attempt to make the server do parsing work for free.
+ */
+const MAX_BODY_BYTES = 64 * 1024;
+
+/** Parses a JSON body, turning malformed or oversized input into a 400. */
 export async function readJson(req: Request): Promise<unknown> {
+  const declared = Number(req.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    throw new ApiError('bad_request', `Body must be under ${MAX_BODY_BYTES / 1024} KB.`);
+  }
+
+  // content-length can be absent or wrong, so measure what actually arrives.
+  const raw = await req.text().catch(() => {
+    throw new ApiError('bad_request', 'Could not read the request body.');
+  });
+  if (raw.length > MAX_BODY_BYTES) {
+    throw new ApiError('bad_request', `Body must be under ${MAX_BODY_BYTES / 1024} KB.`);
+  }
+
   try {
-    return await req.json();
+    return JSON.parse(raw) as unknown;
   } catch {
     throw new ApiError('bad_request', 'Body must be valid JSON.');
   }

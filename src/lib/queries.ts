@@ -1,10 +1,11 @@
 import 'server-only';
 
-import { and, desc, eq, exists, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { getDb, type Db } from '@/db';
 import { agents, follows, likes, posts } from '@/db/schema';
+import { ApiError } from '@/lib/http';
 
 /*
  * A note on the subquery style below.
@@ -41,6 +42,8 @@ export type PublicPost = {
   thread: string;
   author: { id: string; handle: string; displayName: string; model: string | null };
   counts: { likes: number; replies: number };
+  /** A tombstone: the author removed it, but the thread around it stands. */
+  deleted: boolean;
   likedByViewer?: boolean;
 };
 
@@ -52,18 +55,35 @@ export function encodeCursor(row: { createdAt: Date; id: string }): string {
   return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`).toString('base64url');
 }
 
-function decodeCursor(cursor: string): { createdAt: string; id: string } | null {
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Cursors are opaque to callers but still arrive from them. The id half is
+ * interpolated into a ::uuid comparison, so an unvalidated value reaches
+ * Postgres as a cast error and surfaces as a 500 — a bad request dressed as a
+ * server fault. Validate here and say so with a 400 instead.
+ */
+function decodeCursor(cursor: string): { createdAt: string; id: string } {
   const [createdAt, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
-  if (!createdAt || !id || Number.isNaN(Date.parse(createdAt))) return null;
+  if (!createdAt || !id || Number.isNaN(Date.parse(createdAt)) || !UUID_PATTERN.test(id)) {
+    throw new ApiError('bad_request', 'That cursor is not one we issued.', { field: 'cursor' });
+  }
   return { createdAt, id };
 }
 
 const countStar = sql<number>`count(*)::int`;
 
+/** Ceilings on reads that would otherwise grow without bound. */
+export const MAX_THREAD_POSTS = 200;
+export const MAX_CONNECTIONS = 200;
+
 /** Counts replies to the outer post. The self-join needs an alias. */
 function replyCount(db: Db) {
   const replies = alias(posts, 'reply');
-  const sub = db.select({ n: countStar }).from(replies).where(eq(replies.replyToId, posts.id));
+  const sub = db
+    .select({ n: countStar })
+    .from(replies)
+    .where(and(eq(replies.replyToId, posts.id), isNull(replies.deletedAt)));
   return sql<number>`(${sub})`;
 }
 
@@ -120,6 +140,7 @@ function postSelection(db: Db, viewerId?: string) {
     authorHandle: agents.handle,
     authorDisplayName: agents.displayName,
     authorModel: agents.model,
+    deletedAt: posts.deletedAt,
     likeCount: likeCount(db),
     replyCount: replyCount(db),
     likedByViewer: viewerId ? likedBy(db, viewerId) : sql<boolean>`false`,
@@ -137,15 +158,17 @@ type PostRow = {
   authorHandle: string;
   authorDisplayName: string;
   authorModel: string | null;
+  deletedAt: Date | null;
   likeCount: number;
   replyCount: number;
   likedByViewer: boolean;
 };
 
 function toPublicPost(row: PostRow, includeViewer: boolean): PublicPost {
+  const deleted = row.deletedAt !== null;
   return {
     id: row.id,
-    body: row.body,
+    body: deleted ? '' : row.body,
     createdAt: row.createdAt.toISOString(),
     replyTo: row.replyToId,
     replyToHandle: row.replyToHandle,
@@ -157,6 +180,7 @@ function toPublicPost(row: PostRow, includeViewer: boolean): PublicPost {
       model: row.authorModel,
     },
     counts: { likes: row.likeCount, replies: row.replyCount },
+    deleted,
     ...(includeViewer ? { likedByViewer: row.likedByViewer } : {}),
   };
 }
@@ -177,7 +201,7 @@ async function pageOfPosts(
     .select(postSelection(db, opts.viewerId))
     .from(posts)
     .innerJoin(agents, eq(agents.id, posts.agentId))
-    .where(and(where, keyset))
+    .where(and(where, keyset, isNull(posts.deletedAt)))
     .orderBy(desc(posts.createdAt), desc(posts.id))
     // One extra row tells us whether a further page exists.
     .limit(opts.limit + 1)) as PostRow[];
@@ -221,7 +245,10 @@ export function listAgentPosts(
 
 function agentCounts(db: Db) {
   return {
-    postCount: sql<number>`(${db.select({ n: countStar }).from(posts).where(eq(posts.agentId, agents.id))})`,
+    postCount: sql<number>`(${db
+      .select({ n: countStar })
+      .from(posts)
+      .where(and(eq(posts.agentId, agents.id), isNull(posts.deletedAt)))})`,
     followerCount: sql<number>`(${db.select({ n: countStar }).from(follows).where(eq(follows.followeeId, agents.id))})`,
     followingCount: sql<number>`(${db.select({ n: countStar }).from(follows).where(eq(follows.followerId, agents.id))})`,
     // A friend is a follow that is returned.
@@ -276,7 +303,12 @@ export async function getAgentByHandle(handle: string): Promise<PublicAgent | nu
 export async function getThread(
   postId: string,
   viewerId?: string,
-): Promise<{ post: PublicPost; root: PublicPost; replies: PublicPost[] } | null> {
+): Promise<{
+  post: PublicPost;
+  root: PublicPost;
+  replies: PublicPost[];
+  truncated: boolean;
+} | null> {
   const db = await getDb();
   const target = await db
     .select({ rootId: posts.rootId })
@@ -286,24 +318,28 @@ export async function getThread(
   if (!target[0]) return null;
   const rootId = target[0].rootId;
 
+  // A thread is append-only and public, so without a ceiling one busy
+  // conversation makes every read of it arbitrarily large.
   const rows = (await db
     .select(postSelection(db, viewerId))
     .from(posts)
     .innerJoin(agents, eq(agents.id, posts.agentId))
     .where(eq(posts.rootId, rootId))
-    .orderBy(posts.createdAt, posts.id)) as PostRow[];
+    .orderBy(posts.createdAt, posts.id)
+    .limit(MAX_THREAD_POSTS + 1)) as PostRow[];
 
-  const all = rows.map((r) => toPublicPost(r, Boolean(viewerId)));
+  const truncated = rows.length > MAX_THREAD_POSTS;
+  const all = rows.slice(0, MAX_THREAD_POSTS).map((r) => toPublicPost(r, Boolean(viewerId)));
   const root = all.find((p) => p.id === rootId);
   const post = all.find((p) => p.id === postId);
   if (!root || !post) return null;
-  return { post, root, replies: all.filter((p) => p.id !== root.id) };
+  return { post, root, replies: all.filter((p) => p.id !== root.id), truncated };
 }
 
 type Direction = 'followers' | 'following' | 'friends';
 
 /** The social graph around one agent, in whichever direction was asked for. */
-export async function listConnections(agentId: string, direction: Direction) {
+export async function listConnections(agentId: string, direction: Direction, limit = MAX_CONNECTIONS) {
   const db = await getDb();
   const selection = {
     id: agents.id,
@@ -320,18 +356,20 @@ export async function listConnections(agentId: string, direction: Direction) {
       .from(follows)
       .innerJoin(agents, eq(agents.id, follows.followerId))
       .where(eq(follows.followeeId, agentId))
-      .orderBy(desc(follows.createdAt));
+      .orderBy(desc(follows.createdAt))
+      .limit(limit);
   }
 
   const base = db.select(selection).from(follows).innerJoin(agents, eq(agents.id, follows.followeeId));
 
   if (direction === 'following') {
-    return base.where(eq(follows.followerId, agentId)).orderBy(desc(follows.createdAt));
+    return base.where(eq(follows.followerId, agentId)).orderBy(desc(follows.createdAt)).limit(limit);
   }
 
   return base
     .where(and(eq(follows.followerId, agentId), followsBack(db, sql`${agentId}::uuid`)))
-    .orderBy(desc(follows.createdAt));
+    .orderBy(desc(follows.createdAt))
+    .limit(limit);
 }
 
 /** Who has been talking to, or liking, this agent lately. */

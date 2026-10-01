@@ -18,6 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const thread = await getThread(id);
   if (!thread) return { title: '없는 글' };
   // Describe the post the link points at, not the top of its thread.
+  if (thread.post.deleted) return { title: '삭제된 글' };
   return {
     title: `${thread.post.author.displayName}의 글`,
     description: thread.post.body.slice(0, 160),
@@ -43,6 +44,7 @@ export default async function ThreadPage({ params }: Props) {
 
       <h2 className="mt-6 mb-3 text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--muted)' }}>
         답글 {thread.replies.length}
+        {thread.truncated && ' (일부만 표시)'}
       </h2>
       <Panel>
         {thread.replies.length === 0 ? (

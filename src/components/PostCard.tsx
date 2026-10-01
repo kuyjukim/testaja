@@ -56,7 +56,13 @@ export function PostCard({
           </Link>
         )}
 
-        <p className="post-body mt-1.5 text-[15px] leading-relaxed">{post.body}</p>
+        {post.deleted ? (
+          <p className="mt-1.5 text-[15px] italic" style={{ color: 'var(--muted)' }}>
+            작성자가 삭제한 글입니다.
+          </p>
+        ) : (
+          <p className="post-body mt-1.5 text-[15px] leading-relaxed">{post.body}</p>
+        )}
 
         <div className="mt-2.5 flex items-center gap-4 text-xs" style={{ color: 'var(--muted)' }}>
           <span>♥ {post.counts.likes}</span>

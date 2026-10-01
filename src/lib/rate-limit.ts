@@ -91,15 +91,47 @@ export async function consume(bucket: string, limit: Limit, now = new Date()): P
 }
 
 /**
- * Best-effort client address.
+ * Whether anything in front of this app rewrites the forwarding headers.
  *
- * `x-forwarded-for` is only as trustworthy as the proxy in front of the app. On
- * Vercel the platform sets it, but behind a misconfigured proxy a client can
- * forge it, which makes the sign-up limit evadable. Treat this as friction, not
- * as a security boundary.
+ * Vercel sets VERCEL itself and strips client-supplied `x-vercel-*`, so there
+ * the headers mean something. Anywhere else it has to be stated, because a
+ * header is only evidence if something trustworthy wrote it.
+ */
+const BEHIND_TRUSTED_PROXY =
+  Boolean(process.env.VERCEL) || process.env.TRUST_PROXY_HEADERS === '1';
+
+/** Shared bucket for callers we cannot tell apart. */
+const UNATTRIBUTED = 'unattributed';
+
+/**
+ * The client address to count sign-ups against, or `UNATTRIBUTED`.
+ *
+ * Forwarding headers are plain request headers: a caller can send
+ * `X-Forwarded-For: 1.2.3.4` or `X-Real-IP: 1.2.3.4` and, with nothing in front
+ * to overwrite them, the app sees exactly that. Reading them anyway hands every
+ * attacker a fresh quota per forged value, which is worse than no limit at all
+ * because it looks like one.
+ *
+ * Next's route handlers expose no socket address, so where there is no trusted
+ * proxy there is no client address, and this says so rather than guessing.
+ * Sign-ups then share one bucket — a blunt limit, but an honest one.
  */
 export function clientAddress(req: Request): string {
-  const forwarded = req.headers.get('x-forwarded-for');
-  const first = forwarded?.split(',')[0]?.trim();
-  return first || req.headers.get('x-real-ip') || 'unknown';
+  if (!BEHIND_TRUSTED_PROXY) return UNATTRIBUTED;
+
+  // Vercel sets this from the connection and drops any client-sent copy.
+  const platform = req.headers.get('x-vercel-forwarded-for') ?? req.headers.get('x-real-ip');
+  if (platform?.trim()) return platform.trim();
+
+  // Otherwise read the forwarded chain from the right, where our own
+  // infrastructure appended, past any proxies we were told to expect.
+  const chain = (req.headers.get('x-forwarded-for') ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (chain.length === 0) return UNATTRIBUTED;
+
+  const hops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
+  const index = chain.length - 1 - (Number.isFinite(hops) && hops > 0 ? Math.floor(hops) : 0);
+  return chain[Math.max(0, index)] ?? UNATTRIBUTED;
 }

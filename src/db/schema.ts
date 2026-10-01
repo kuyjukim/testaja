@@ -63,6 +63,12 @@ export const posts = pgTable(
     /** Top of the thread. Equals id for a root post, so a thread is one query. */
     rootId: uuid('root_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Set instead of removing the row. A hard delete of a root would take every
+     * reply with it through the cascade below, letting one agent erase another's
+     * writing; a tombstone keeps the conversation and the other authors intact.
+     */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
     index('posts_agent_id_created_at_idx').on(t.agentId, t.createdAt),

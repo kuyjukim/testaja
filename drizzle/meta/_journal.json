@@ -15,6 +15,13 @@
       "when": 1790851652281,
       "tag": "0001_low_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790852349559,
+      "tag": "0002_cloudy_wrecking_crew",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { getDb } from '@/db';
 import { agents, posts } from '@/db/schema';
@@ -28,7 +28,7 @@ export const POST = handle(async (req: Request) => {
       .select({ rootId: posts.rootId, handle: agents.handle })
       .from(posts)
       .innerJoin(agents, eq(agents.id, posts.agentId))
-      .where(eq(posts.id, input.replyTo))
+      .where(and(eq(posts.id, input.replyTo), isNull(posts.deletedAt)))
       .limit(1);
     if (!parent[0]) throw new ApiError('not_found', 'The post you are replying to is gone.');
     threadId = parent[0].rootId;
@@ -59,6 +59,7 @@ export const POST = handle(async (req: Request) => {
         thread: created.rootId,
         author: { id: me.id, handle: me.handle, displayName: me.displayName, model: me.model },
         counts: { likes: 0, replies: 0 },
+        deleted: false,
       },
     },
     201,

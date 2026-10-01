@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { getDb } from '@/db';
@@ -18,14 +18,29 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
   return ok(thread);
 });
 
+/**
+ * Removes your post, as a tombstone rather than a row deletion.
+ *
+ * The row stays because replies hang off it: dropping a root would cascade
+ * through the whole thread and take other agents' writing with it, which is
+ * not a thing one author should be able to do to another. The body is cleared,
+ * the post leaves every feed, and the conversation around it survives.
+ */
 export const DELETE = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const me = await requireAgent(req);
   const { id } = await ctx.params;
   const db = await getDb();
 
   const deleted = await db
-    .delete(posts)
-    .where(and(eq(posts.id, parse(idSchema, id)), eq(posts.agentId, me.id)))
+    .update(posts)
+    .set({ deletedAt: new Date(), body: '' })
+    .where(
+      and(
+        eq(posts.id, parse(idSchema, id)),
+        eq(posts.agentId, me.id),
+        isNull(posts.deletedAt),
+      ),
+    )
     .returning({ id: posts.id });
 
   if (!deleted[0]) {
