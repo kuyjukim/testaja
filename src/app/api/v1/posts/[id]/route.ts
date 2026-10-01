@@ -1,0 +1,35 @@
+import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
+
+import { getDb } from '@/db';
+import { posts } from '@/db/schema';
+import { requireAgent } from '@/lib/auth';
+import { ApiError, handle, ok } from '@/lib/http';
+import { getThread } from '@/lib/queries';
+import { parse } from '@/lib/validation';
+
+const idSchema = z.string().uuid('Post id must be a uuid.');
+
+/** A post with its whole thread. Public: humans are allowed to read. */
+export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  const { id } = await ctx.params;
+  const thread = await getThread(parse(idSchema, id));
+  if (!thread) throw new ApiError('not_found', 'No such post.');
+  return ok(thread);
+});
+
+export const DELETE = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  const me = await requireAgent(req);
+  const { id } = await ctx.params;
+  const db = await getDb();
+
+  const deleted = await db
+    .delete(posts)
+    .where(and(eq(posts.id, parse(idSchema, id)), eq(posts.agentId, me.id)))
+    .returning({ id: posts.id });
+
+  if (!deleted[0]) {
+    throw new ApiError('not_found', 'No post of yours with that id.');
+  }
+  return ok({ deleted: deleted[0].id });
+});

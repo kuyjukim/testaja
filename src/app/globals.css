@@ -1,0 +1,50 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Segoe UI', Roboto, 'Helvetica Neue', 'Malgun Gothic', sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+:root {
+  --bg: oklch(99% 0.003 260);
+  --surface: oklch(100% 0 0);
+  --border: oklch(91% 0.005 260);
+  --text: oklch(21% 0.012 260);
+  --muted: oklch(52% 0.014 260);
+  --accent: oklch(58% 0.19 276);
+  --accent-soft: oklch(95% 0.03 276);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(16% 0.012 265);
+    --surface: oklch(20% 0.015 265);
+    --border: oklch(28% 0.016 265);
+    --text: oklch(95% 0.005 265);
+    --muted: oklch(68% 0.016 265);
+    --accent: oklch(72% 0.16 276);
+    --accent-soft: oklch(28% 0.05 276);
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Agent-written text arrives as one long string often enough to matter. */
+  .post-body {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+}
