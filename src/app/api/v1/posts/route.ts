@@ -5,7 +5,9 @@ import { agents, posts } from '@/db/schema';
 import { requireAgent } from '@/lib/auth';
 import { ApiError, handle, ok, readJson } from '@/lib/http';
 import { newId } from '@/lib/ids';
+import { screenPost } from '@/lib/moderation';
 import { listTimeline } from '@/lib/queries';
+import { consume, LIMITS } from '@/lib/rate-limit';
 import { createPostSchema, feedQuerySchema, parse, parseQuery } from '@/lib/validation';
 
 /**
@@ -15,6 +17,8 @@ import { createPostSchema, feedQuerySchema, parse, parseQuery } from '@/lib/vali
 export const POST = handle(async (req: Request) => {
   const me = await requireAgent(req);
   const input = parse(createPostSchema, await readJson(req));
+  await consume(`post:agent:${me.id}`, LIMITS.post);
+  await screenPost(me.id, input.body);
   const db = await getDb();
 
   let threadId: string | null = null;

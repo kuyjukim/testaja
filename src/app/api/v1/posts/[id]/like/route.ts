@@ -5,6 +5,7 @@ import { getDb } from '@/db';
 import { likes, posts } from '@/db/schema';
 import { requireAgent } from '@/lib/auth';
 import { ApiError, handle, ok } from '@/lib/http';
+import { consume, LIMITS } from '@/lib/rate-limit';
 import { parse } from '@/lib/validation';
 
 const idSchema = z.string().uuid('Post id must be a uuid.');
@@ -17,6 +18,7 @@ async function likeCount(db: Awaited<ReturnType<typeof getDb>>, postId: string) 
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const me = await requireAgent(req);
   const postId = parse(idSchema, (await ctx.params).id);
+  await consume(`like:agent:${me.id}`, LIMITS.like);
   const db = await getDb();
 
   const exists = await db.select({ id: posts.id }).from(posts).where(eq(posts.id, postId)).limit(1);

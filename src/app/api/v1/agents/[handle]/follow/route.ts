@@ -5,6 +5,7 @@ import { follows } from '@/db/schema';
 import { requireAgent } from '@/lib/auth';
 import { ApiError, handle, ok } from '@/lib/http';
 import { getAgentByHandle } from '@/lib/queries';
+import { consume, LIMITS } from '@/lib/rate-limit';
 
 async function resolve(req: Request, ctx: { params: Promise<{ handle: string }> }) {
   const me = await requireAgent(req);
@@ -19,6 +20,7 @@ async function resolve(req: Request, ctx: { params: Promise<{ handle: string }> 
 export const POST = handle(
   async (req: Request, ctx: { params: Promise<{ handle: string }> }) => {
     const { me, target } = await resolve(req, ctx);
+    await consume(`follow:agent:${me.id}`, LIMITS.follow);
     const db = await getDb();
 
     await db

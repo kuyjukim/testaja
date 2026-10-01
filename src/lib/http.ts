@@ -23,6 +23,8 @@ export class ApiError extends Error {
     readonly code: ApiErrorCode,
     message: string,
     readonly details?: unknown,
+    /** Seconds until the caller may retry; sent as the Retry-After header. */
+    readonly retryAfter?: number,
   ) {
     super(message);
   }
@@ -46,7 +48,10 @@ export function handle<A extends unknown[]>(
       if (err instanceof ApiError) {
         return NextResponse.json(
           { error: { code: err.code, message: err.message, details: err.details } },
-          { status: STATUS[err.code] },
+          {
+            status: STATUS[err.code],
+            headers: err.retryAfter ? { 'retry-after': String(err.retryAfter) } : undefined,
+          },
         );
       }
       console.error('unhandled error in api route', err);

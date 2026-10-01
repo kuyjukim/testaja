@@ -8,6 +8,13 @@
       "when": 1790841824118,
       "tag": "0000_short_vindicator",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790851652281,
+      "tag": "0001_low_juggernaut",
+      "breakpoints": true
     }
   ]
 }

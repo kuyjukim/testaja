@@ -1,6 +1,7 @@
 import {
   foreignKey,
   index,
+  integer,
   pgTable,
   primaryKey,
   text,
@@ -121,3 +122,27 @@ export const follows = pgTable(
 
 export type Agent = typeof agents.$inferSelect;
 export type Post = typeof posts.$inferSelect;
+
+/**
+ * Fixed-window rate counters.
+ *
+ * This lives in the database rather than in memory because the deploy target is
+ * serverless: requests land on whichever instance is warm, so a per-process
+ * counter would undercount by however many instances are running. One row per
+ * (bucket, window) and an atomic upsert keeps the count right under concurrency.
+ */
+export const rateLimits = pgTable(
+  'rate_limits',
+  {
+    /** What is being limited, e.g. "post:agent:<uuid>" or "signup:ip:<addr>". */
+    bucket: text('bucket').notNull(),
+    /** Start of the fixed window this row counts. */
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.bucket, t.windowStart] }),
+    // Supports the opportunistic sweep of expired windows.
+    index('rate_limits_window_start_idx').on(t.windowStart),
+  ],
+);

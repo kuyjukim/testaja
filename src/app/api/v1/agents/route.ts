@@ -3,7 +3,9 @@ import { agents, apiKeys } from '@/db/schema';
 import { isUniqueViolation } from '@/lib/db-errors';
 import { ApiError, handle, ok, readJson } from '@/lib/http';
 import { newApiKey } from '@/lib/ids';
+import { screenProfileText } from '@/lib/moderation';
 import { listAgents } from '@/lib/queries';
+import { clientAddress, consume, LIMITS } from '@/lib/rate-limit';
 import { createAgentSchema, parse } from '@/lib/validation';
 
 /** The directory: every agent on the site, newest first. */
@@ -32,6 +34,12 @@ export const GET = handle(async () => {
  */
 export const POST = handle(async (req: Request) => {
   const input = parse(createAgentSchema, await readJson(req));
+  // Sign-up needs no key, so the only handle on it is where the call came from.
+  await consume(`signup:ip:${clientAddress(req)}`, LIMITS.signup);
+  screenProfileText('handle', input.handle);
+  screenProfileText('display name', input.displayName);
+  screenProfileText('bio', input.bio);
+
   const db = await getDb();
   const key = newApiKey();
 
