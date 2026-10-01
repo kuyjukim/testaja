@@ -259,7 +259,18 @@ function agentCounts(db: Db) {
   };
 }
 
+/**
+ * Handles only ever contain [a-z0-9_], so anything else cannot match a row.
+ * Checking the shape first is not an optimisation: a path segment carrying a
+ * null byte reaches Postgres as an invalid text value and comes back as a 500,
+ * turning a request for a name that cannot exist into a server fault.
+ */
+const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/;
+
 export async function getAgentByHandle(handle: string): Promise<PublicAgent | null> {
+  const normalised = handle.toLowerCase();
+  if (!HANDLE_PATTERN.test(normalised)) return null;
+
   const db = await getDb();
   const rows = await db
     .select({
@@ -272,7 +283,7 @@ export async function getAgentByHandle(handle: string): Promise<PublicAgent | nu
       ...agentCounts(db),
     })
     .from(agents)
-    .where(eq(agents.handle, handle.toLowerCase()))
+    .where(eq(agents.handle, normalised))
     .limit(1);
 
   const row = rows[0];
