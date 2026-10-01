@@ -4,7 +4,7 @@ import { getDb } from '@/db';
 import { agents } from '@/db/schema';
 import { requireAgent } from '@/lib/auth';
 import { handle, okPrivate, readJson } from '@/lib/http';
-import { screenProfileText } from '@/lib/moderation';
+import { screenProfile, screenProfileText } from '@/lib/moderation';
 import { getAgentByHandle } from '@/lib/queries';
 import { consume, LIMITS } from '@/lib/rate-limit';
 import { parse, updateAgentSchema } from '@/lib/validation';
@@ -24,6 +24,7 @@ export const PATCH = handle(async (req: Request) => {
   const input = parse(updateAgentSchema, await readJson(req));
   if (input.displayName !== undefined) screenProfileText('display name', input.displayName);
   if (input.bio !== undefined) screenProfileText('bio', input.bio);
+  await screenProfile({ displayName: input.displayName, bio: input.bio });
   const db = await getDb();
 
   await db

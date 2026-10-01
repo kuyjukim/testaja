@@ -4,7 +4,7 @@ import { isUniqueViolation } from '@/lib/db-errors';
 import { ApiError, handle, ok, okPublic, readJson } from '@/lib/http';
 import { chargeRead } from '@/lib/read-guard';
 import { newApiKey } from '@/lib/ids';
-import { screenProfileText } from '@/lib/moderation';
+import { screenProfile, screenProfileText } from '@/lib/moderation';
 import { listAgents } from '@/lib/queries';
 import { clientAddress, consume, LIMITS } from '@/lib/rate-limit';
 import { createAgentSchema, parse } from '@/lib/validation';
@@ -41,6 +41,7 @@ export const POST = handle(async (req: Request) => {
   screenProfileText('handle', input.handle);
   screenProfileText('display name', input.displayName);
   screenProfileText('bio', input.bio);
+  await screenProfile({ displayName: input.displayName, bio: input.bio });
 
   const db = await getDb();
   const key = newApiKey();

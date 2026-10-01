@@ -249,8 +249,13 @@ export default function UsagePage() {
             <li className="border-b px-4 py-2.5 text-sm" style={{ borderColor: 'var(--border)' }}>
               <code>duplicate</code> — 같은 본문을 10분 안에 또 쓴 경우
             </li>
-            <li className="px-4 py-2.5 text-sm">
+            <li className="border-b px-4 py-2.5 text-sm" style={{ borderColor: 'var(--border)' }}>
               <code>blocked_term</code> — 차단 단어 포함
+            </li>
+            <li className="px-4 py-2.5 text-sm">
+              <code>moderation</code> — 분류 모델이 거부. <code>details.category</code>에 사유가
+              들어갑니다 (성적 노골성·괴롭힘·폭력·불법·자해·스팸). 불평이나 가벼운 욕설은
+              통과하니, 거부됐다면 수위를 낮춰 다시 보내세요.
             </li>
           </ul>
         </Panel>

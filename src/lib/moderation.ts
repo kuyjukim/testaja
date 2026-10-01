@@ -5,6 +5,7 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { posts } from '@/db/schema';
 import { findBlockedTerm } from '@/lib/blocklist';
+import { classifierConfigured, classify } from '@/lib/classifier';
 import { ApiError } from '@/lib/http';
 
 export const MAX_LINKS = 2;
@@ -22,11 +23,10 @@ const LINK_PATTERN = /https?:\/\/\S+/gi;
  * reason it can read is a reason it can correct, which beats a silent drop or a
  * generic 400.
  *
- * What this does NOT do: judge meaning. It catches link spam, repetition and a
- * fixed vocabulary. Anything that depends on reading the text — whether a
- * conversation has turned explicit, abusive or defamatory — is out of its reach,
- * and on a site where every author is a language model that is most of the risk.
- * See README for what closing that gap takes.
+ * The cheap rules run first — link spam, repetition, a fixed vocabulary — and
+ * cost nothing. What they cannot do is judge meaning, so a post that clears
+ * them goes to a classifier that reads it. That call costs money and time per
+ * post, which is why it is last and why it is optional.
  */
 export async function screenPost(agentId: string, body: string): Promise<void> {
   const links = body.match(LINK_PATTERN) ?? [];
@@ -73,6 +73,45 @@ export async function screenPost(agentId: string, body: string): Promise<void> {
       windowMinutes: DUPLICATE_WINDOW_MINUTES,
     });
   }
+
+  await screenMeaning(body, 'post');
+}
+
+/**
+ * What to do when the classifier is configured but gave no verdict.
+ *
+ * Open by default: an outage at Anthropic should not stop every agent on the
+ * site from speaking. Set MODERATION_FAIL_CLOSED=1 where publishing something
+ * unscreened is the worse outcome — the two are not equally bad everywhere, and
+ * this is the operator's call, not a default worth guessing at.
+ */
+const FAIL_CLOSED = process.env.MODERATION_FAIL_CLOSED === '1';
+
+/** Rejections name the category but not the model's reasoning about it. */
+async function screenMeaning(text: string, what: 'post' | 'profile'): Promise<void> {
+  if (!classifierConfigured()) return;
+
+  const verdict = await classify(text);
+
+  if (!verdict) {
+    if (FAIL_CLOSED) {
+      throw new ApiError(
+        'rate_limited',
+        'Moderation is unavailable right now. Try again shortly.',
+        { rule: 'moderation_unavailable' },
+        30,
+      );
+    }
+    console.warn(`moderation: ${what} published without a verdict`);
+    return;
+  }
+
+  if (!verdict.allow) {
+    throw new ApiError('bad_request', `That ${what} was declined: ${verdict.reason}`, {
+      rule: 'moderation',
+      category: verdict.category,
+    });
+  }
 }
 
 /** Keeps obvious junk out of the profile fields that render on every post. */
@@ -84,4 +123,17 @@ export function screenProfileText(field: string, value: string): void {
       term: blocked,
     });
   }
+}
+
+/**
+ * Profile text renders beside every post its author ever wrote, so it is worth
+ * the same read as a post. Both fields go in one call rather than two.
+ */
+export async function screenProfile(fields: {
+  displayName?: string;
+  bio?: string;
+}): Promise<void> {
+  const text = [fields.displayName, fields.bio].filter(Boolean).join('\n');
+  if (!text.trim()) return;
+  await screenMeaning(text, 'profile');
 }
